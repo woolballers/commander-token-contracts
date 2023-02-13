@@ -3,29 +3,19 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
+import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
-import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 
 import "./utils/AddressesOrNFTs.sol";
 import "./interfaces/ICommanderToken.sol";
 
 /**
- * @dev Implementation of https://eips.ethereum.org/EIPS/eip-721[ERC721] Non-Fungible Token Standard, including
- * the Metadata extension, but not including the Enumerable extension, which is available separately as
- * {ERC721Enumerable}.
+ * @dev Implementation of CommanderToken Standard
  */
-contract CommanderTokenV2 is
-    Context,
-    ERC165,
-    IERC721,
-    IERC721Metadata,
-    ICommanderToken
-{
+contract CommanderToken is ICommanderToken, ERC721, Ownable {
     using Address for address;
     using Strings for uint256;
     using AddressesOrNFTs for AddressesOrNFTs.AddressOrNFT;
@@ -43,22 +33,17 @@ contract CommanderTokenV2 is
     bool public defaultTransferable = true;
     bool public defaultBurnable = true;
 
+    // Mapping from token ID to token data
     mapping(uint256 => Token) private _tokens;
-
-    // Token name
-    string private _name;
-
-    // Token symbol
-    string private _symbol;
 
     // Mapping from token ID to owner address
     mapping(uint256 => AddressesOrNFTs.AddressOrNFT) private _owners;
 
-    // Mapping owner address to token count
+    // Mapping owner address or NFT owner to token count
     mapping(address /* addressOrNFT */ => mapping(uint256 /* nftTokenIdOr0 */ => uint256))
         private _balances;
 
-    // Mapping from token ID to approved address
+    // Mapping from token ID to approved address or NFT
     mapping(uint256 => AddressesOrNFTs.AddressOrNFT) private _tokenApprovals;
 
     // Mapping from owner to operator approvals
@@ -68,20 +53,18 @@ contract CommanderTokenV2 is
     /**
      * @dev Initializes the contract by setting a `name` and a `symbol` to the token collection.
      */
-    constructor(string memory name_, string memory symbol_) {
-        _name = name_;
-        _symbol = symbol_;
-    }
+    constructor(
+        string memory name_,
+        string memory symbol_
+    ) ERC721(name_, symbol_) {}
 
     /**
      * @dev See {IERC165-supportsInterface}.
      */
     function supportsInterface(
         bytes4 interfaceId
-    ) public view virtual override(ERC165, IERC165) returns (bool) {
+    ) public view virtual override(ERC721, IERC165) returns (bool) {
         return
-            interfaceId == type(IERC721).interfaceId ||
-            interfaceId == type(IERC721Metadata).interfaceId ||
             interfaceId == type(ICommanderToken).interfaceId ||
             super.supportsInterface(interfaceId);
     }
@@ -91,7 +74,7 @@ contract CommanderTokenV2 is
      */
     function balanceOf(
         address owner
-    ) public view virtual override returns (uint256) {
+    ) public view virtual override(ERC721, IERC721) returns (uint256) {
         require(
             owner != address(0),
             "ERC721: address zero is not a valid owner"
@@ -113,17 +96,6 @@ contract CommanderTokenV2 is
 
     function burn(uint256 tokenId) public virtual override {}
 
-    /**
-     * @dev See {IERC721-ownerOf}.
-     */
-    function ownerOf(
-        uint256 tokenId
-    ) public view virtual override returns (address) {
-        address owner = _ownerOf(tokenId);
-        require(owner != address(0), "ERC721: invalid token ID");
-        return owner;
-    }
-
     function ownerOfNft(
         uint256 _tokenId
     )
@@ -142,48 +114,13 @@ contract CommanderTokenV2 is
     }
 
     /**
-     * @dev See {IERC721Metadata-name}.
-     */
-    function name() public view virtual override returns (string memory) {
-        return _name;
-    }
-
-    /**
-     * @dev See {IERC721Metadata-symbol}.
-     */
-    function symbol() public view virtual override returns (string memory) {
-        return _symbol;
-    }
-
-    /**
-     * @dev See {IERC721Metadata-tokenURI}.
-     */
-    function tokenURI(
-        uint256 tokenId
-    ) public view virtual override returns (string memory) {
-        _requireMinted(tokenId);
-
-        string memory baseURI = _baseURI();
-        return
-            bytes(baseURI).length > 0
-                ? string(abi.encodePacked(baseURI, tokenId.toString()))
-                : "";
-    }
-
-    /**
-     * @dev Base URI for computing {tokenURI}. If set, the resulting URI for each
-     * token will be the concatenation of the `baseURI` and the `tokenId`. Empty
-     * by default, can be overridden in child contracts.
-     */
-    function _baseURI() internal view virtual returns (string memory) {
-        return "";
-    }
-
-    /**
      * @dev See {IERC721-approve}.
      */
-    function approve(address to, uint256 tokenId) public virtual override {
-        address owner = CommanderTokenV2.ownerOf(tokenId);
+    function approve(
+        address to,
+        uint256 tokenId
+    ) public virtual override(ERC721, IERC721) {
+        address owner = ERC721.ownerOf(tokenId);
         require(to != owner, "ERC721: approval to current owner");
 
         require(
@@ -199,7 +136,7 @@ contract CommanderTokenV2 is
      */
     function getApproved(
         uint256 tokenId
-    ) public view virtual override returns (address) {
+    ) public view virtual override(ERC721, IERC721) returns (address) {
         _requireMinted(tokenId);
 
         return _tokenApprovals[tokenId].addressOrNftContract;
@@ -211,7 +148,7 @@ contract CommanderTokenV2 is
     function setApprovalForAll(
         address operator,
         bool approved
-    ) public virtual override {
+    ) public virtual override(ERC721, IERC721) {
         _setApprovalForAll(_msgSender(), operator, approved);
     }
 
@@ -221,7 +158,7 @@ contract CommanderTokenV2 is
     function isApprovedForAll(
         address owner,
         address operator
-    ) public view virtual override returns (bool) {
+    ) public view virtual override(ERC721, IERC721) returns (bool) {
         return
             _operatorApprovals[owner][ADDRESS_NOT_NFT][operator][
                 ADDRESS_NOT_NFT
@@ -321,7 +258,7 @@ contract CommanderTokenV2 is
         address from,
         address to,
         uint256 tokenId
-    ) public virtual override {
+    ) public virtual override(ERC721, IERC721) {
         //solhint-disable-next-line max-line-length
         require(
             _isApprovedOrOwner(_msgSender(), tokenId),
@@ -333,6 +270,7 @@ contract CommanderTokenV2 is
 
     /**
      * From address to NFT
+     *
      */
     function transferFrom(
         address _fromAddress,
@@ -411,7 +349,7 @@ contract CommanderTokenV2 is
         address from,
         address to,
         uint256 tokenId
-    ) public virtual override {
+    ) public virtual override(ERC721, IERC721) {
         safeTransferFrom(from, to, tokenId, "");
     }
 
@@ -423,7 +361,7 @@ contract CommanderTokenV2 is
         address to,
         uint256 tokenId,
         bytes memory data
-    ) public virtual override {
+    ) public virtual override(ERC721, IERC721) {
         require(
             _isApprovedOrOwner(_msgSender(), tokenId),
             "ERC721: caller is not token owner or approved"
@@ -454,18 +392,20 @@ contract CommanderTokenV2 is
         address to,
         uint256 tokenId,
         bytes memory data
-    ) internal virtual {
+    ) internal virtual override {
         _transfer(from, to, tokenId);
-        require(
-            _checkOnERC721Received(from, to, tokenId, data),
-            "ERC721: transfer to non ERC721Receiver implementer"
-        );
+        // require(
+        //     ERC721._checkOnERC721Received(from, to, tokenId, data),
+        //     "ERC721: transfer to non ERC721Receiver implementer"
+        // );
     }
 
     /**
      * @dev Returns the owner of the `tokenId`. Does NOT revert if token doesn't exist
      */
-    function _ownerOf(uint256 tokenId) internal view virtual returns (address) {
+    function _ownerOf(
+        uint256 tokenId
+    ) internal view virtual override returns (address) {
         if (!_owners[tokenId].isNFT()) {
             return _owners[tokenId].getAddress();
         } else {
@@ -494,7 +434,9 @@ contract CommanderTokenV2 is
      * Tokens start existing when they are minted (`_mint`),
      * and stop existing when they are burned (`_burn`).
      */
-    function _exists(uint256 tokenId) internal view virtual returns (bool) {
+    function _exists(
+        uint256 tokenId
+    ) internal view virtual override returns (bool) {
         if (_ownerOf(tokenId) != address(0)) {
             return true;
         } else {
@@ -524,8 +466,8 @@ contract CommanderTokenV2 is
     function _isApprovedOrOwner(
         address spender,
         uint256 tokenId
-    ) internal view virtual returns (bool) {
-        address owner = CommanderTokenV2.ownerOf(tokenId);
+    ) internal view virtual override returns (bool) {
+        address owner = ERC721.ownerOf(tokenId);
         return (spender == owner ||
             isApprovedForAll(owner, spender) ||
             getApproved(tokenId) == spender);
@@ -541,7 +483,10 @@ contract CommanderTokenV2 is
      *
      * Emits a {Transfer} event.
      */
-    function _safeMint(address to, uint256 tokenId) internal virtual {
+    function _safeMint(
+        address to,
+        uint256 tokenId
+    ) internal virtual override(ERC721) {
         _safeMint(to, tokenId, "");
     }
 
@@ -553,12 +498,12 @@ contract CommanderTokenV2 is
         address to,
         uint256 tokenId,
         bytes memory data
-    ) internal virtual {
+    ) internal virtual override(ERC721) {
         _mint(to, tokenId);
-        require(
-            _checkOnERC721Received(address(0), to, tokenId, data),
-            "ERC721: transfer to non ERC721Receiver implementer"
-        );
+        // require(
+        //     ERC721._checkOnERC721Received(address(0), to, tokenId, data),
+        //     "ERC721: transfer to non ERC721Receiver implementer"
+        // );
     }
 
     /**
@@ -573,7 +518,10 @@ contract CommanderTokenV2 is
      *
      * Emits a {Transfer} event.
      */
-    function _mint(address to, uint256 tokenId) internal virtual {
+    function _mint(
+        address to,
+        uint256 tokenId
+    ) internal virtual override(ERC721) {
         require(to != address(0), "ERC721: mint to the zero address");
         require(!_exists(tokenId), "ERC721: token already minted");
 
@@ -642,13 +590,13 @@ contract CommanderTokenV2 is
      *
      * Emits a {Transfer} event.
      */
-    function _burn(uint256 tokenId) internal virtual {
-        address owner = CommanderTokenV2.ownerOf(tokenId);
+    function _burn(uint256 tokenId) internal virtual override {
+        address owner = ERC721.ownerOf(tokenId);
 
         _beforeTokenTransfer(owner, address(0), tokenId, 1);
 
         // Update ownership in case tokenId was transferred by `_beforeTokenTransfer` hook
-        owner = CommanderTokenV2.ownerOf(tokenId);
+        owner = ERC721.ownerOf(tokenId);
 
         // Clear approvals
         delete _tokenApprovals[tokenId];
@@ -680,9 +628,9 @@ contract CommanderTokenV2 is
         address from,
         address to,
         uint256 tokenId
-    ) internal virtual {
+    ) internal virtual override {
         require(
-            CommanderTokenV2.ownerOf(tokenId) == from,
+            ERC721.ownerOf(tokenId) == from,
             "ERC721: transfer from incorrect owner"
         );
         require(to != address(0), "ERC721: transfer to the zero address");
@@ -691,7 +639,7 @@ contract CommanderTokenV2 is
 
         // Check that tokenId was not transferred by `_beforeTokenTransfer` hook
         require(
-            CommanderTokenV2.ownerOf(tokenId) == from,
+            ERC721.ownerOf(tokenId) == from,
             "ERC721: transfer from incorrect owner"
         );
 
@@ -719,12 +667,12 @@ contract CommanderTokenV2 is
      *
      * Emits an {Approval} event.
      */
-    function _approve(address to, uint256 tokenId) internal virtual {
+    function _approve(address to, uint256 tokenId) internal virtual override {
         _tokenApprovals[tokenId] = AddressesOrNFTs.AddressOrNFT(
             to,
             ADDRESS_NOT_NFT
         );
-        emit Approval(CommanderTokenV2.ownerOf(tokenId), to, tokenId);
+        emit Approval(ERC721.ownerOf(tokenId), to, tokenId);
     }
 
     /**
@@ -736,62 +684,12 @@ contract CommanderTokenV2 is
         address owner,
         address operator,
         bool approved
-    ) internal virtual {
+    ) internal virtual override {
         require(owner != operator, "ERC721: approve to caller");
         _operatorApprovals[owner][ADDRESS_NOT_NFT][operator][
             ADDRESS_NOT_NFT
         ] = approved;
         emit ApprovalForAll(owner, operator, approved);
-    }
-
-    /**
-     * @dev Reverts if the `tokenId` has not been minted yet.
-     */
-    function _requireMinted(uint256 tokenId) internal view virtual {
-        require(_exists(tokenId), "ERC721: invalid token ID");
-    }
-
-    /**
-     * @dev Internal function to invoke {IERC721Receiver-onERC721Received} on a target address.
-     * The call is not executed if the target address is not a contract.
-     *
-     * @param from address representing the previous owner of the given token ID
-     * @param to target address that will receive the tokens
-     * @param tokenId uint256 ID of the token to be transferred
-     * @param data bytes optional data to send along with the call
-     * @return bool whether the call correctly returned the expected magic value
-     */
-    function _checkOnERC721Received(
-        address from,
-        address to,
-        uint256 tokenId,
-        bytes memory data
-    ) private returns (bool) {
-        if (to.isContract()) {
-            try
-                IERC721Receiver(to).onERC721Received(
-                    _msgSender(),
-                    from,
-                    tokenId,
-                    data
-                )
-            returns (bytes4 retval) {
-                return retval == IERC721Receiver.onERC721Received.selector;
-            } catch (bytes memory reason) {
-                if (reason.length == 0) {
-                    revert(
-                        "ERC721: transfer to non ERC721Receiver implementer"
-                    );
-                } else {
-                    /// @solidity memory-safe-assembly
-                    assembly {
-                        revert(add(32, reason), mload(reason))
-                    }
-                }
-            }
-        } else {
-            return true;
-        }
     }
 
     /**
@@ -813,7 +711,7 @@ contract CommanderTokenV2 is
         address to,
         uint256 /* firstTokenId */,
         uint256 batchSize
-    ) internal virtual {
+    ) internal virtual override {
         if (batchSize > 1) {
             if (from != address(0)) {
                 _balances[from][ADDRESS_NOT_NFT] -= batchSize;
@@ -823,27 +721,6 @@ contract CommanderTokenV2 is
             }
         }
     }
-
-    /**
-     * @dev Hook that is called after any token transfer. This includes minting and burning. If {ERC721Consecutive} is
-     * used, the hook may be called as part of a consecutive (batch) mint, as indicated by `batchSize` greater than 1.
-     *
-     * Calling conditions:
-     *
-     * - When `from` and `to` are both non-zero, ``from``'s tokens were transferred to `to`.
-     * - When `from` is zero, the tokens were minted for `to`.
-     * - When `to` is zero, ``from``'s tokens were burned.
-     * - `from` and `to` are never both zero.
-     * - `batchSize` is non-zero.
-     *
-     * To learn more about hooks, head to xref:ROOT:extending-contracts.adoc#using-hooks[Using Hooks].
-     */
-    function _afterTokenTransfer(
-        address from,
-        address to,
-        uint256 firstTokenId,
-        uint256 batchSize
-    ) internal virtual {}
 
     function _checkTokenDefaults(uint256 tokenId) internal virtual {
         if (!_tokens[tokenId].exists) {
@@ -857,25 +734,30 @@ contract CommanderTokenV2 is
      * Let transfer and burn be dependent on another token.
      * In this caes you cannot transfer or burn your token unless all the tokens you depend on
      * are transferable or burnable.
-     * dependency only works if '_dependentTokenId' from '_dependableContractAddress' is owned by uint256 '_tokenId'.
+     * dependency only works if 'dependentTokenId' from 'dependableContractAddress' is owned by uint256 '_tokenId'.
      * Caller must be the owner, opertaor or approved to use _tokenId.
      */
     function setDependence(
-        uint256 _tokenId,
-        ICommanderToken _dependableContractAddress,
-        uint256 _dependentTokenId,
-        bool _dependent
-    ) public virtual override {}
+        uint256 tokenId,
+        ICommanderToken dependableContractAddress,
+        uint256 dependentTokenId,
+        bool dependent
+    ) public virtual override {
+        _checkTokenDefaults(tokenId);
+        _tokens[tokenId].dependencies[address(dependableContractAddress)][
+                dependentTokenId
+            ] = dependent;
+    }
 
     // EYAL'S ADDITION
     function isDependent(
-        uint256 _tokenId,
-        address _dependableContractAddress,
-        uint256 _dependentTokenId
+        uint256 tokenId,
+        address dependableContractAddress,
+        uint256 dependentTokenId
     ) public view virtual override returns (bool) {
         return
-            _tokens[_tokenId].dependencies[_dependableContractAddress][
-                _dependentTokenId
+            _tokens[tokenId].dependencies[dependableContractAddress][
+                dependentTokenId
             ];
     }
 
@@ -930,6 +812,13 @@ contract CommanderTokenV2 is
     function isBurnable(
         uint256 _tokenId
     ) public view virtual override returns (bool) {
+        return
+            _tokens[_tokenId].exists
+                ? _tokens[_tokenId].burnable
+                : defaultBurnable;
+    }
+
+    function isBurnable2(uint256 _tokenId) public view virtual returns (bool) {
         return
             _tokens[_tokenId].exists
                 ? _tokens[_tokenId].burnable
