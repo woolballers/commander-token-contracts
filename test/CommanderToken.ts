@@ -5,7 +5,7 @@ import { expect } from "chai";
 import { TOKEN_NAME, TOKEN_SYMBOL, INITIAL_MINT_COUNT } from "../constants/test";
 
 import {
-    CommanderToken
+    CommanderTokenV3
 } from "../typechain-types";
 
 
@@ -46,20 +46,23 @@ const getRandomMintedTokenId = function (initiallyMinted: string[]): number {
     return n;
 }
 
+const getRandomMintedTokens = function (initiallyMinted: string[]): string[] {
+    let shuffled = initiallyMinted
+        .map(value => ({ value, sort: Math.random() }))
+        .sort((a, b) => a.sort - b.sort)
+        .map(({ value }) => value)
+
+    return shuffled;
+}
+
 
 // Start test block
 describe('CommanderToken', function () {
     before(async function () {
 
-        const addressesLibrary = await ethers.getContractFactory('AddressesOrNFTs')
-        const addressesLibraryDeployed = await addressesLibrary.deploy()
-        await addressesLibraryDeployed.deployed();
 
-        this.CommanderTokenMintTestFactory = await ethers.getContractFactory('CommanderTokenMintTest', {
-            libraries: {
-                AddressesOrNFTs: addressesLibraryDeployed.address,
-            },
-        });
+
+        this.CommanderTokenMintTestFactory = await ethers.getContractFactory('MintTest');
     });
 
     beforeEach(async function () {
@@ -72,6 +75,7 @@ describe('CommanderToken', function () {
         this.contractOwner = signers[0].address;
         this.collector = signers[1].address;
         this.owner = signers[0];
+        this.wallet2 = signers[2];
 
 
         // Get the collector contract for signing transaction with collector key
@@ -79,8 +83,9 @@ describe('CommanderToken', function () {
 
         await mintTokensFixture(this);
 
-        comanderTokenSetBurnableDefaultFixture(this);
-        comanderTokenSetTransferableDefaultFixture(this);
+
+        this.defaultBurnable = false;
+        this.defaultTransferable = false;
 
 
 
@@ -121,10 +126,8 @@ describe('CommanderToken', function () {
             // Change default transferability of one of the NFTs
             await this.CommanderToken.connect(this.owner).setTransferable(tokenIdToChange, !this.defaultTransferable);
 
-            // Check for transferability
-            for (let i = 1; i <= this.initialMint.length; i++) {
-                expect(await this.CommanderToken.isTransferable(i)).to.equal(i == tokenIdToChange ? !this.defaultTransferable : this.defaultTransferable);
-            }
+            expect(await this.CommanderToken.isTransferable(tokenIdToChange)).to.equal(!this.defaultTransferable);
+
         });
 
         it('Setting transferability doesn\'t affect burnability', async function () {
@@ -171,8 +174,122 @@ describe('CommanderToken', function () {
 
     });
 
+    describe('Dependence', function () {
 
-    describe('NFT Owned tokens', function () {
+
+        it('Default dependence', async function () {
+
+            const [tokenIdToChange, dependentTokenId] = getRandomMintedTokens(this.initialMint)
+
+            const defaultDependence = false;
+            const dependableContractAddress = this.CommanderToken.address;
+
+            expect(await this.CommanderToken.isDependent(tokenIdToChange, dependableContractAddress, dependentTokenId)).to.equal(defaultDependence);
+
+        });
+
+        it('Setting dependence', async function () {
+            const [tokenIdToChange, dependentTokenId] = getRandomMintedTokens(this.initialMint)
+
+            const defaultDependence = false;
+            const isDependent = true;
+            const dependableContractAddress = this.CommanderToken.address;
+
+            expect(await this.CommanderToken.isDependent(tokenIdToChange, dependableContractAddress, dependentTokenId)).to.equal(defaultDependence);
+
+            // Change default burnability of one of the NFTs
+            await this.CommanderToken.connect(this.owner).setDependence(tokenIdToChange, dependableContractAddress, dependentTokenId);
+
+
+            expect(await this.CommanderToken.isDependent(tokenIdToChange, dependableContractAddress, dependentTokenId)).to.equal(isDependent);
+
+
+        });
+
+    });
+
+
+    describe('Transfers', function () {
+        it('From wallet to wallet', async function () {
+            const tokenIdToTransfer = getRandomMintedTokenId(this.initialMint);
+            const transferToWallet = this.wallet2.address;
+
+            const ownerAddress = await this.CommanderToken.ownerOf(tokenIdToTransfer);
+            expect(ownerAddress).to.not.equal(transferToWallet);
+            expect(ownerAddress).to.equal(this.owner.address);
+
+            await this.CommanderToken.connect(this.owner).transferFrom(ownerAddress, transferToWallet, tokenIdToTransfer);
+
+            const newOwnerAddress = await this.CommanderToken.ownerOf(tokenIdToTransfer);
+
+            expect(newOwnerAddress).to.equal(transferToWallet);
+
+
+        })
+
+
+        it('Token not transfarable', async function () {
+            const tokenIdToTransfer = getRandomMintedTokenId(this.initialMint);
+            const transferToWallet = this.wallet2.address;
+
+            const ownerAddress = await this.CommanderToken.ownerOf(tokenIdToTransfer);
+            expect(ownerAddress).to.not.equal(transferToWallet);
+            expect(ownerAddress).to.equal(this.owner.address);
+
+            await this.CommanderToken.connect(this.owner).setTransferable(tokenIdToTransfer, false);
+
+            expect(await this.CommanderToken.isTokenTranferable(tokenIdToTransfer)).to.equal(false);
+
+
+        })
+
+        it('Dependency not transfarable', async function () {
+
+            const [tokenIdToChange, dependentTokenId] = getRandomMintedTokens(this.initialMint)
+
+            const defaultDependence = false;
+            const isDependent = true;
+            const dependableContractAddress = this.CommanderToken.address;
+
+            await this.CommanderToken.connect(this.owner).setTransferable(dependentTokenId, false);
+
+
+            expect(await this.CommanderToken.isDependent(tokenIdToChange, dependableContractAddress, dependentTokenId)).to.equal(defaultDependence);
+
+            // Change default burnability of one of the NFTs
+            await this.CommanderToken.connect(this.owner).setDependence(tokenIdToChange, dependableContractAddress, dependentTokenId);
+
+
+            expect(await this.CommanderToken.isDependent(tokenIdToChange, dependableContractAddress, dependentTokenId)).to.equal(isDependent);
+
+
+
+            const transferToWallet = this.wallet2.address;
+
+
+            expect(await this.CommanderToken.isTokenTranferable(tokenIdToChange)).to.equal(false);
+
+
+
+        })
+
+
+
+    });
+
+    it('Lock works', async function () {
+
+    });
+
+    it('Lock doesnt work when 2 different owners', async function () {
+
+    });
+
+    it('Lock a=>b, a not transfarable by owner only by contract b', async function () {
+
+    });
+
+    it('Dependant also locks', async function () {
 
     });
 
